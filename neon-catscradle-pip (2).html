@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NEON CAT'S CRADLE</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --cyan: #00ffff;
+    --pink: #ff00ff;
+    --dark: #020208;
+    --hud: rgba(0, 255, 255, 0.7);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  #video {
+    position: fixed;
+    bottom: 56px;
+    right: 16px;
+    width: clamp(120px, 18vw, 200px);
+    height: clamp(90px, 13.5vw, 150px);
+    object-fit: cover;
+    opacity: 0; /* hidden — drawn on canvas instead so recording captures it */
+    transform: scaleX(-1);
+    z-index: 8;
+    pointer-events: none;
+  }
+
+  #cam-label { display: none; }
+  #cam-pip-border { display: none; }
+
+  #canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    cursor: none;
+  }
+
+  /* Grid background */
+  #grid-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-image:
+      linear-gradient(rgba(0,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+
+  /* HUD Elements */
+  #hud {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 10;
+    pointer-events: none;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .hud-corner {
+    position: absolute;
+    padding: 12px 16px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .hud-tl { top: 16px; left: 16px; }
+  .hud-tr { top: 16px; right: 16px; text-align: right; }
+  .hud-bl { bottom: 16px; left: 16px; }
+  .hud-br { bottom: 16px; right: 16px; text-align: right; }
+
+  .hud-line {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--cyan);
+    text-shadow: 0 0 8px var(--cyan);
+  }
+
+  .hud-line.pink {
+    color: var(--pink);
+    text-shadow: 0 0 8px var(--pink);
+  }
+
+  .hud-line.status {
+    color: #ffff00;
+    text-shadow: 0 0 8px #ffff00;
+  }
+
+  .hud-line.tracking {
+    color: #00ff88;
+    text-shadow: 0 0 8px #00ff88;
+  }
+
+  /* Corner brackets */
+  .bracket {
+    position: absolute;
+    width: 20px; height: 20px;
+    border-color: var(--cyan);
+    border-style: solid;
+    opacity: 0.6;
+  }
+  .bracket.tl { top: 8px; left: 8px; border-width: 2px 0 0 2px; }
+  .bracket.tr { top: 8px; right: 8px; border-width: 2px 2px 0 0; }
+  .bracket.bl { bottom: 8px; left: 8px; border-width: 0 0 2px 2px; }
+  .bracket.br { bottom: 8px; right: 8px; border-width: 0 2px 2px 0; }
+
+  /* Title */
+  #title-bar {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  #title-bar .title-main {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(12px, 2vw, 22px);
+    font-weight: 900;
+    letter-spacing: 0.3em;
+    color: var(--cyan);
+    text-shadow: 0 0 20px var(--cyan), 0 0 40px var(--cyan);
+    display: block;
+  }
+
+  #title-bar .title-sub {
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--pink);
+    text-shadow: 0 0 8px var(--pink);
+    display: block;
+    margin-top: 2px;
+  }
+
+  /* Help overlay */
+  #help-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+
+  #help-overlay.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .help-box {
+    border: 1px solid var(--cyan);
+    box-shadow: 0 0 30px rgba(0,255,255,0.3), inset 0 0 30px rgba(0,0,0,0.5);
+    padding: 36px 48px;
+    max-width: 520px;
+    width: 90%;
+  }
+
+  .help-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 15px var(--cyan);
+    letter-spacing: 0.2em;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .help-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 14px;
+  }
+
+  .key {
+    display: inline-block;
+    min-width: 48px;
+    padding: 4px 10px;
+    border: 1px solid var(--pink);
+    color: var(--pink);
+    text-shadow: 0 0 6px var(--pink);
+    box-shadow: 0 0 8px rgba(255,0,255,0.3);
+    font-size: 12px;
+    text-align: center;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+
+  .help-desc {
+    color: rgba(0,255,255,0.8);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  .help-close {
+    margin-top: 24px;
+    text-align: center;
+    color: rgba(255,255,255,0.4);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+  }
+
+  /* Start screen */
+  #start-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #050518 0%, #000 100%);
+  }
+
+  #start-screen.hidden { display: none; }
+
+  .start-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(24px, 6vw, 72px);
+    font-weight: 900;
+    letter-spacing: 0.3em;
+    color: var(--cyan);
+    text-shadow: 0 0 30px var(--cyan), 0 0 60px var(--cyan), 0 0 100px rgba(0,255,255,0.5);
+    margin-bottom: 8px;
+    animation: flicker 4s infinite;
+  }
+
+  .start-sub {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(10px, 2vw, 18px);
+    letter-spacing: 0.5em;
+    color: var(--pink);
+    text-shadow: 0 0 15px var(--pink);
+    margin-bottom: 60px;
+  }
+
+  .start-desc {
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    color: rgba(0,255,255,0.5);
+    margin-bottom: 48px;
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.8;
+  }
+
+  #start-btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: #000;
+    background: var(--cyan);
+    border: none;
+    padding: 16px 48px;
+    cursor: pointer;
+    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    transition: all 0.2s;
+    text-transform: uppercase;
+    box-shadow: 0 0 30px rgba(0,255,255,0.6);
+  }
+
+  #start-btn:hover {
+    background: var(--pink);
+    box-shadow: 0 0 40px rgba(255,0,255,0.8);
+    transform: scale(1.05);
+  }
+
+  #start-btn:active { transform: scale(0.98); }
+
+  #error-msg {
+    margin-top: 20px;
+    color: #ff4444;
+    text-shadow: 0 0 8px #ff4444;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-align: center;
+    max-width: 420px;
+    line-height: 1.9;
+    display: none;
+  }
+
+  #error-msg b {
+    color: #ffff00;
+    text-shadow: 0 0 6px #ffff00;
+    font-weight: normal;
+  }
+
+  #error-msg span[style*="00ffff"] {
+    text-decoration: underline;
+  }
+
+  /* Scanlines */
+  #scanlines {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.05) 2px,
+      rgba(0,0,0,0.05) 4px
+    );
+  }
+
+  @keyframes flicker {
+    0%, 95%, 100% { opacity: 1; }
+    96% { opacity: 0.8; }
+    97% { opacity: 1; }
+    98% { opacity: 0.6; }
+    99% { opacity: 1; }
+  }
+
+  /* Mobile touch hints */
+  #touch-hint {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: none;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  @media (max-width: 768px) {
+    #touch-hint { display: block; }
+    .hud-corner { font-size: 9px; padding: 8px 10px; }
+    #title-bar .title-main { font-size: 12px; }
+    #video {
+      bottom: 100px;
+      right: 10px;
+      width: 100px;
+      height: 75px;
+    }
+    #cam-label {
+      bottom: 100px;
+      right: 10px;
+      width: 100px;
+      font-size: 8px;
+    }
+    #cam-pip-border {
+      bottom: 99px;
+      right: 9px;
+      width: 102px;
+      height: 93px;
+    }
+  }
+
+  .touch-btn-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .touch-btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--cyan);
+    border: 1px solid rgba(0,255,255,0.4);
+    background: rgba(0,0,0,0.7);
+    padding: 6px 14px;
+    cursor: pointer;
+    pointer-events: all;
+    text-transform: uppercase;
+  }
+
+  .touch-btn:active { background: rgba(0,255,255,0.15); }
+
+  /* ── Record Button ── */
+  #rec-btn {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 52px; /* below title bar */
+    z-index: 15;
+    display: none; /* shown after camera starts */
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: rgba(0,255,255,0.85);
+    background: rgba(0,0,0,0.75);
+    border: 1px solid rgba(0,255,255,0.45);
+    padding: 5px 18px;
+    cursor: pointer;
+    text-transform: uppercase;
+    pointer-events: all;
+    transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+  }
+
+  #rec-btn:hover {
+    color: var(--cyan);
+    border-color: var(--cyan);
+    box-shadow: 0 0 12px rgba(0,255,255,0.4);
+  }
+
+  #rec-btn.recording {
+    color: #ff4444;
+    border-color: #ff4444;
+    box-shadow: 0 0 14px rgba(255,68,68,0.5);
+    animation: rec-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(255,68,68,0.4); }
+    50%       { box-shadow: 0 0 22px rgba(255,68,68,0.85); }
+  }
+
+  #rec-status {
+    position: fixed;
+    top: 96px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+    display: none;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: #ff4444;
+    text-shadow: 0 0 8px #ff4444;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 768px) {
+    #rec-btn { margin-top: 44px; font-size: 10px; padding: 4px 14px; }
+    #rec-status { top: 84px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Backgrounds -->
+<div id="grid-bg"></div>
+<div id="scanlines"></div>
+
+<!-- Start Screen -->
+<div id="start-screen">
+  <div class="start-title">CAT'S CRADLE</div>
+  <div class="start-sub">NEON EDITION</div>
+  <div class="start-desc">
+    HAND-TRACKING · REAL-TIME · CYBER NEON<br>
+    POINT YOUR CAMERA AT YOUR HANDS<br>
+    AND WEAVE LIGHT BETWEEN YOUR FINGERS
+  </div>
+  <button id="start-btn">▶ ACTIVATE CAMERA</button>
+  <div id="error-msg"></div>
+</div>
+
+<!-- Camera PIP -->
+<div id="cam-pip-border"></div>
+<video id="video" autoplay playsinline muted></video>
+<div id="cam-label">◉ LIVE CAM</div>
+
+<!-- Main canvas -->
+<canvas id="canvas"></canvas>
+
+<!-- Record Button -->
+<button id="rec-btn" onclick="toggleRecording()">⏺ REC</button>
+<div id="rec-status">● REC 00:00</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+
+  <div id="title-bar">
+    <span class="title-main">NEON CAT'S CRADLE</span>
+    <span class="title-sub">HAND TRACKING ACTIVE</span>
+  </div>
+
+  <div class="hud-corner hud-tl">
+    <span class="hud-line" id="fps-display">FPS: --</span>
+    <span class="hud-line" id="mode-display">MODE: STRING</span>
+    <span class="hud-line pink" id="palette-display">PALETTE: CYAN/PINK</span>
+  </div>
+
+  <div class="hud-corner hud-tr">
+    <span class="hud-line status" id="hand-status">◉ WAITING FOR HANDS</span>
+    <span class="hud-line" id="hand-count">HANDS: 0</span>
+    <span class="hud-line" id="fx-display">FX: NORMAL</span>
+  </div>
+
+  <div class="hud-corner hud-bl">
+    <span class="hud-line" style="color:rgba(0,255,255,0.4)">H — HELP</span>
+    <span class="hud-line" style="color:rgba(0,255,255,0.4)">SPACE — PALETTE</span>
+    <span class="hud-line" style="color:rgba(255,68,68,0.5)">R — RECORD</span>
+  </div>
+
+  <div class="hud-corner hud-br">
+    <span class="hud-line" style="color:rgba(0,255,255,0.4)">M — MODE</span>
+    <span class="hud-line" style="color:rgba(0,255,255,0.4)">L — LISSAJOUS</span>
+    <span class="hud-line" style="color:rgba(0,255,255,0.4)">K — MIRROR</span>
+  </div>
+</div>
+
+<!-- Mobile touch controls -->
+<div id="touch-hint">
+  <div class="touch-btn-row">
+    <button class="touch-btn" onclick="cyclePalette()">PALETTE</button>
+    <button class="touch-btn" onclick="cycleMode()">MODE</button>
+    <button class="touch-btn" onclick="toggleHarmonic()">WIGGLE</button>
+    <button class="touch-btn" onclick="toggleSymmetry()">MIRROR</button>
+    <button class="touch-btn" onclick="toggleHelp()">HELP</button>
+    <button class="touch-btn" onclick="toggleRecording()" id="touch-rec-btn">⏺ REC</button>
+  </div>
+</div>
+
+<!-- Help Overlay -->
+<div id="help-overlay">
+  <div class="help-box">
+    <div class="help-title">// CONTROLS //</div>
+
+    <div class="help-row">
+      <span class="key">SPACE</span>
+      <span class="help-desc">Cycle color palette (Cyan/Pink → Green/Purple → Orange/Blue)</span>
+    </div>
+    <div class="help-row">
+      <span class="key">M</span>
+      <span class="help-desc">Cycle render mode (String → Particles → Waves)</span>
+    </div>
+    <div class="help-row">
+      <span class="key">L</span>
+      <span class="help-desc">Toggle harmonic oscillation — lines wiggle</span>
+    </div>
+    <div class="help-row">
+      <span class="key">K</span>
+      <span class="help-desc">Toggle symmetry mirror mode</span>
+    </div>
+    <div class="help-row">
+      <span class="key">H</span>
+      <span class="help-desc">Show / hide this help overlay</span>
+    </div>
+    <div class="help-row">
+      <span class="key">ESC</span>
+      <span class="help-desc">Close help overlay</span>
+    </div>
+    <div class="help-row">
+      <span class="key">R</span>
+      <span class="help-desc">Start / stop screen recording — auto-downloads WebM on stop</span>
+    </div>
+
+    <div class="help-close">PRESS H OR ESC TO CLOSE</div>
+  </div>
+</div>
+
+<!-- MediaPipe + Three.js CDN -->
+<!-- drawing_utils and hands only — camera_utils intentionally omitted.
+     The Camera utility inside camera_utils.js calls getUserMedia() internally,
+     which mobile browsers deny silently (no prompt) because it lacks a user gesture.
+     We drive the frame loop ourselves instead. -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d');
+const video   = document.getElementById('video');
+
+let W = 0, H = 0;
+let hands = null;
+let camera = null;
+let latestResults = null;
+
+// Animation state
+let frameCount = 0;
+let lastTime   = performance.now();
+let fps        = 0;
+let t          = 0; // global time (seconds)
+let rafId      = null;
+
+// Tracked hand data (smoothed)
+let smoothedHands = [];
+
+// Background particles
+const PARTICLES = [];
+const NUM_PARTICLES = 80;
+
+// ── Settings ─────────────────────────────────────────────
+const PALETTES = [
+  { name: 'CYAN/PINK',   a: '#00ffff', b: '#ff00ff', c: '#ffffff' },
+  { name: 'GREEN/PURPLE',a: '#00ff88', b: '#aa00ff', c: '#ccffcc' },
+  { name: 'ORANGE/BLUE', a: '#ff9900', b: '#0066ff', c: '#ffeecc' },
+];
+const MODES = ['STRING', 'PARTICLES', 'WAVES'];
+
+let paletteIdx  = 0;
+let modeIdx     = 0;
+let harmonic    = false;
+let symmetry    = false;
+let helpVisible = false;
+
+// ── Exposed for mobile buttons ────────────────────────────
+function cyclePalette() {
+  paletteIdx = (paletteIdx + 1) % PALETTES.length;
+  document.getElementById('palette-display').textContent = 'PALETTE: ' + PALETTES[paletteIdx].name;
+}
+function cycleMode() {
+  modeIdx = (modeIdx + 1) % MODES.length;
+  document.getElementById('mode-display').textContent = 'MODE: ' + MODES[modeIdx];
+}
+function toggleHarmonic() {
+  harmonic = !harmonic;
+  document.getElementById('fx-display').textContent = 'FX: ' + (harmonic ? 'WIGGLE' : (symmetry ? 'MIRROR' : 'NORMAL'));
+}
+function toggleSymmetry() {
+  symmetry = !symmetry;
+  document.getElementById('fx-display').textContent = 'FX: ' + (symmetry ? 'MIRROR' : (harmonic ? 'WIGGLE' : 'NORMAL'));
+}
+function toggleHelp() {
+  helpVisible = !helpVisible;
+  document.getElementById('help-overlay').classList.toggle('visible', helpVisible);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════════════
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ═══════════════════════════════════════════════════════════
+//  BACKGROUND PARTICLES
+// ═══════════════════════════════════════════════════════════
+function initParticles() {
+  PARTICLES.length = 0;
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    PARTICLES.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 1.5 + 0.3,
+      alpha: Math.random() * 0.4 + 0.05,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
+initParticles();
+
+function drawParticlesBg(pal) {
+  for (const p of PARTICLES) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    const a = p.alpha * (0.6 + 0.4 * Math.sin(t * 0.8 + p.phase));
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = (frameCount % 2 === 0 ? pal.a : pal.b) + Math.round(a * 255).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HAND SMOOTHING
+// ═══════════════════════════════════════════════════════════
+const SMOOTH_FACTOR = 0.35; // lerp factor (lower = smoother/slower)
+
+function lerpPoint(a, b, f) {
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+}
+
+function updateSmoothed(raw) {
+  // raw: array of {landmarks:[{x,y,z}...], handedness:'Left'|'Right'}
+  if (raw.length === 0) {
+    // Decay
+    smoothedHands = smoothedHands.map(h => {
+      h.alpha = (h.alpha || 1) - 0.08;
+      return h;
+    }).filter(h => (h.alpha || 1) > 0);
+    return;
+  }
+
+  // Match by handedness
+  const newSmoothed = [];
+  for (const rawHand of raw) {
+    const existing = smoothedHands.find(s => s.handedness === rawHand.handedness);
+    if (existing) {
+      existing.landmarks = rawHand.landmarks.map((lm, i) =>
+        lerpPoint(existing.landmarks[i], lm, SMOOTH_FACTOR)
+      );
+      existing.alpha = Math.min(1, (existing.alpha || 0) + 0.15);
+      newSmoothed.push(existing);
+    } else {
+      newSmoothed.push({ ...rawHand, alpha: 0.1 });
+    }
+  }
+  smoothedHands = newSmoothed;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  COORDINATE MAPPING
+// ═══════════════════════════════════════════════════════════
+function lmToCanvas(lm) {
+  // MediaPipe gives normalized [0,1]. Video is mirrored (scaleX(-1) on video element),
+  // so we flip x so canvas matches the visual video.
+  return {
+    x: (1 - lm.x) * W,
+    y: lm.y * H,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NEON LINE UTILITIES
+// ═══════════════════════════════════════════════════════════
+function neonLine(x1, y1, x2, y2, color, width, blur, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = width;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = blur;
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  // Second pass for core brightness
+  ctx.globalAlpha = alpha * 0.6;
+  ctx.lineWidth   = width * 0.3;
+  ctx.shadowBlur  = blur * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function neonCurve(x1, y1, x2, y2, cpx, cpy, color, width, blur, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = width;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = blur;
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function neonDot(x, y, r, color, blur, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle   = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = blur;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HARMONIC WIGGLE
+// ═══════════════════════════════════════════════════════════
+function harmonicOffset(baseX, baseY, idx) {
+  if (!harmonic) return { x: baseX, y: baseY };
+  const amp = 8;
+  return {
+    x: baseX + Math.sin(t * 2.1 + idx * 0.7) * amp,
+    y: baseY + Math.cos(t * 1.7 + idx * 1.3) * amp,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAW: STRING MODE
+// ═══════════════════════════════════════════════════════════
+function drawString(hands, pal) {
+  const pulse = 0.7 + 0.3 * Math.sin(t * 3.5);
+  const blur  = 18 * pulse;
+  const baseW = 2.5;
+
+  for (let hi = 0; hi < hands.length; hi++) {
+    const hand  = hands[hi];
+    const alpha = (hand.alpha || 1);
+    const lms   = hand.landmarks.map((lm, i) => {
+      const c = lmToCanvas(lm);
+      return harmonicOffset(c.x, c.y, i + hi * 21);
+    });
+
+    const col = hi === 0 ? pal.a : pal.b;
+
+    // ── Within-hand connections (same-hand cat's cradle) ──
+    // Thumb tip (4) → Index tip (8)
+    neonLine(lms[4].x, lms[4].y, lms[8].x, lms[8].y, col, baseW * pulse, blur, alpha);
+    // Index tip (8) → Pinky tip (20)
+    neonLine(lms[8].x, lms[8].y, lms[20].x, lms[20].y, col, baseW * pulse, blur, alpha);
+    // Thumb tip (4) → Pinky tip (20)
+    neonLine(lms[4].x, lms[4].y, lms[20].x, lms[20].y, col, baseW * pulse * 0.8, blur * 1.2, alpha);
+
+    // Inner web — middle (12) and ring (16) fill
+    neonLine(lms[8].x, lms[8].y, lms[12].x, lms[12].y, col, baseW * 0.6 * pulse, blur * 0.6, alpha * 0.6);
+    neonLine(lms[12].x, lms[12].y, lms[16].x, lms[16].y, col, baseW * 0.6 * pulse, blur * 0.6, alpha * 0.6);
+    neonLine(lms[16].x, lms[16].y, lms[20].x, lms[20].y, col, baseW * 0.6 * pulse, blur * 0.6, alpha * 0.6);
+
+    // Wrist to thumb base
+    neonLine(lms[0].x, lms[0].y, lms[2].x, lms[2].y, col, baseW * 0.5 * pulse, blur * 0.4, alpha * 0.5);
+    neonLine(lms[0].x, lms[0].y, lms[17].x, lms[17].y, col, baseW * 0.5 * pulse, blur * 0.4, alpha * 0.5);
+
+    // Landmark dots
+    const KEY_LMS = [0, 4, 8, 12, 16, 20];
+    for (const k of KEY_LMS) {
+      neonDot(lms[k].x, lms[k].y, 5 * pulse, col, blur * 1.5, alpha);
+      neonDot(lms[k].x, lms[k].y, 2, pal.c, 4, alpha);
+    }
+  }
+
+  // ── Cross-hand connections ──
+  if (hands.length === 2) {
+    const h0 = hands[0].landmarks.map((lm, i) => {
+      const c = lmToCanvas(lm);
+      return harmonicOffset(c.x, c.y, i);
+    });
+    const h1 = hands[1].landmarks.map((lm, i) => {
+      const c = lmToCanvas(lm);
+      return harmonicOffset(c.x, c.y, i + 21);
+    });
+    const crossAlpha = Math.min(hands[0].alpha || 1, hands[1].alpha || 1);
+
+    // Wrist to wrist
+    neonLine(h0[0].x, h0[0].y, h1[0].x, h1[0].y, pal.c, baseW * 0.8 * pulse, blur * 0.8, crossAlpha * 0.7);
+
+    // Index to index ("X" crossover)
+    neonLine(h0[8].x, h0[8].y, h1[8].x, h1[8].y, pal.a, baseW * 1.5 * pulse, blur * 1.5, crossAlpha);
+
+    // Thumb to thumb
+    neonLine(h0[4].x, h0[4].y, h1[4].x, h1[4].y, pal.b, baseW * 1.5 * pulse, blur * 1.5, crossAlpha);
+
+    // Pinky to pinky
+    neonLine(h0[20].x, h0[20].y, h1[20].x, h1[20].y, pal.a, baseW * 1.2 * pulse, blur * 1.2, crossAlpha);
+
+    // Middle to middle (subtle)
+    neonLine(h0[12].x, h0[12].y, h1[12].x, h1[12].y, pal.b, baseW * 0.6 * pulse, blur * 0.6, crossAlpha * 0.5);
+
+    // Crossing diagonals (the cat's cradle "X")
+    neonLine(h0[4].x, h0[4].y, h1[20].x, h1[20].y, pal.b, baseW * 0.8 * pulse, blur, crossAlpha * 0.6);
+    neonLine(h0[20].x, h0[20].y, h1[4].x, h1[4].y, pal.a, baseW * 0.8 * pulse, blur, crossAlpha * 0.6);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAW: PARTICLES MODE
+// ═══════════════════════════════════════════════════════════
+// Particles stream between landmark key points
+const PART_STREAMS = [];
+const MAX_STREAM_PARTICLES = 120;
+
+function initStreams() {
+  PART_STREAMS.length = 0;
+}
+initStreams();
+
+function emitStreamParticle(x1, y1, x2, y2, color) {
+  if (PART_STREAMS.length < MAX_STREAM_PARTICLES) {
+    const t0 = Math.random();
+    PART_STREAMS.push({
+      x: x1 + (x2 - x1) * t0, y: y1 + (y2 - y1) * t0,
+      x1, y1, x2, y2,
+      t: t0, speed: 0.008 + Math.random() * 0.015,
+      r: Math.random() * 3 + 1,
+      color,
+      alpha: 0,
+    });
+  }
+}
+
+function drawParticlesMode(hands, pal) {
+  const pulse = 0.7 + 0.3 * Math.sin(t * 3.5);
+
+  // Emit from hand lines
+  for (let hi = 0; hi < hands.length; hi++) {
+    const hand = hands[hi];
+    const lms  = hand.landmarks.map(lm => lmToCanvas(lm));
+    const col  = hi === 0 ? pal.a : pal.b;
+    if (Math.random() < 0.4) emitStreamParticle(lms[4].x, lms[4].y, lms[8].x, lms[8].y, col);
+    if (Math.random() < 0.4) emitStreamParticle(lms[8].x, lms[8].y, lms[20].x, lms[20].y, col);
+    if (Math.random() < 0.3) emitStreamParticle(lms[4].x, lms[4].y, lms[20].x, lms[20].y, col);
+  }
+
+  if (hands.length === 2) {
+    const lms0 = hands[0].landmarks.map(lm => lmToCanvas(lm));
+    const lms1 = hands[1].landmarks.map(lm => lmToCanvas(lm));
+    if (Math.random() < 0.5) emitStreamParticle(lms0[8].x, lms0[8].y, lms1[8].x, lms1[8].y, pal.a);
+    if (Math.random() < 0.5) emitStreamParticle(lms0[4].x, lms0[4].y, lms1[4].x, lms1[4].y, pal.b);
+    if (Math.random() < 0.4) emitStreamParticle(lms0[20].x, lms0[20].y, lms1[20].x, lms1[20].y, pal.a);
+  }
+
+  // Update & draw particles
+  for (let i = PART_STREAMS.length - 1; i >= 0; i--) {
+    const p = PART_STREAMS[i];
+    p.t += p.speed;
+    p.x = p.x1 + (p.x2 - p.x1) * p.t;
+    p.y = p.y1 + (p.y2 - p.y1) * p.t;
+    p.alpha = Math.sin(Math.min(p.t, 1) * Math.PI) * 0.9;
+    if (p.t >= 1.0 || p.alpha <= 0.01) { PART_STREAMS.splice(i, 1); continue; }
+    neonDot(p.x, p.y, p.r * pulse, p.color, 15, p.alpha);
+  }
+
+  // Draw faint skeleton lines
+  for (let hi = 0; hi < hands.length; hi++) {
+    const hand = hands[hi];
+    const lms  = hand.landmarks.map(lm => lmToCanvas(lm));
+    const col  = hi === 0 ? pal.a : pal.b;
+    neonLine(lms[4].x, lms[4].y, lms[8].x, lms[8].y, col, 0.8, 6, 0.25 * (hand.alpha || 1));
+    neonLine(lms[8].x, lms[8].y, lms[20].x, lms[20].y, col, 0.8, 6, 0.25 * (hand.alpha || 1));
+    neonLine(lms[4].x, lms[4].y, lms[20].x, lms[20].y, col, 0.8, 6, 0.25 * (hand.alpha || 1));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAW: WAVES MODE
+// ═══════════════════════════════════════════════════════════
+function drawWavesBetween(x1, y1, x2, y2, color, freq, amp, phaseOff, width, blur, alpha) {
+  const steps = 60;
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return;
+  const nx = -dy / len, ny = dx / len; // normal
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = width;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = blur;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.beginPath();
+
+  for (let s = 0; s <= steps; s++) {
+    const u = s / steps;
+    const wave = Math.sin(u * Math.PI * freq + t * 4 + phaseOff) * amp * Math.sin(u * Math.PI);
+    const px = x1 + dx * u + nx * wave;
+    const py = y1 + dy * u + ny * wave;
+    s === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawWavesMode(hands, pal) {
+  const pulse = 0.7 + 0.3 * Math.sin(t * 3.5);
+  const amp   = 20 + 10 * Math.sin(t * 0.7);
+  const freq  = 4;
+
+  for (let hi = 0; hi < hands.length; hi++) {
+    const hand  = hands[hi];
+    const alpha = hand.alpha || 1;
+    const lms   = hand.landmarks.map(lm => lmToCanvas(lm));
+    const col   = hi === 0 ? pal.a : pal.b;
+
+    drawWavesBetween(lms[4].x, lms[4].y, lms[8].x, lms[8].y, col, freq, amp, 0, 2.5 * pulse, 20, alpha);
+    drawWavesBetween(lms[8].x, lms[8].y, lms[20].x, lms[20].y, col, freq, amp, 1, 2.5 * pulse, 20, alpha);
+    drawWavesBetween(lms[4].x, lms[4].y, lms[20].x, lms[20].y, col, freq * 1.5, amp * 0.7, 2, 2 * pulse, 16, alpha);
+
+    const KEY_LMS = [0, 4, 8, 12, 16, 20];
+    for (const k of KEY_LMS) {
+      neonDot(lms[k].x, lms[k].y, 5 * pulse, col, 20, alpha);
+    }
+  }
+
+  if (hands.length === 2) {
+    const lms0 = hands[0].landmarks.map(lm => lmToCanvas(lm));
+    const lms1 = hands[1].landmarks.map(lm => lmToCanvas(lm));
+    const crossAlpha = Math.min(hands[0].alpha || 1, hands[1].alpha || 1);
+
+    drawWavesBetween(lms0[8].x, lms0[8].y, lms1[8].x, lms1[8].y, pal.a, freq, amp * 1.2, 0.5, 3 * pulse, 25, crossAlpha);
+    drawWavesBetween(lms0[4].x, lms0[4].y, lms1[4].x, lms1[4].y, pal.b, freq, amp * 1.2, 1.5, 3 * pulse, 25, crossAlpha);
+    drawWavesBetween(lms0[20].x, lms0[20].y, lms1[20].x, lms1[20].y, pal.a, freq, amp, 2.5, 2.5 * pulse, 22, crossAlpha);
+    drawWavesBetween(lms0[0].x, lms0[0].y, lms1[0].x, lms1[0].y, pal.c, freq * 0.8, amp * 0.5, 0, 1.5 * pulse, 12, crossAlpha * 0.6);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAW: SYMMETRY MIRROR
+// ═══════════════════════════════════════════════════════════
+function withSymmetry(drawFn) {
+  drawFn();
+  if (!symmetry) return;
+  ctx.save();
+  ctx.translate(W, 0);
+  ctx.scale(-1, 1);
+  drawFn();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MAIN RENDER LOOP
+// ═══════════════════════════════════════════════════════════
+function render(now) {
+  rafId = requestAnimationFrame(render);
+
+  // Delta time
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+  t += dt;
+  frameCount++;
+
+  // FPS (update every 30 frames)
+  if (frameCount % 30 === 0) {
+    fps = Math.round(30 / (dt * 30 + 0.001) * dt * 30 / (dt * 30 + 0.001)); // approximate
+    // Simpler:
+    fps = Math.round(1 / dt);
+    document.getElementById('fps-display').textContent = 'FPS: ' + fps;
+  }
+
+  const pal = PALETTES[paletteIdx];
+
+  // ── Clear ──────────────────────────────────────────────
+  ctx.clearRect(0, 0, W, H);
+  // Faint trail (motion blur)
+  ctx.fillStyle = 'rgba(0,0,5,0.75)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background particles
+  drawParticlesBg(pal);
+
+  // ── Drive MediaPipe frame sends from our own loop (30fps throttle) ──
+  // This replaces the MediaPipe Camera utility entirely.
+  if (hands && now - lastMpFrameTime >= MP_FRAME_INTERVAL) {
+    lastMpFrameTime = now;
+    sendFrameToMediaPipe(); // fire-and-forget; mpFramePending guards overlap
+  }
+
+  // Sync data from MediaPipe
+  if (latestResults) {
+    const raw = [];
+    if (latestResults.multiHandLandmarks && latestResults.multiHandedness) {
+      for (let i = 0; i < latestResults.multiHandLandmarks.length; i++) {
+        raw.push({
+          landmarks: latestResults.multiHandLandmarks[i],
+          handedness: latestResults.multiHandedness[i]?.label || 'Unknown',
+        });
+      }
+    }
+    updateSmoothed(raw);
+
+    // Update HUD
+    const count = raw.length;
+    const statusEl = document.getElementById('hand-status');
+    const countEl  = document.getElementById('hand-count');
+    if (count === 0) {
+      statusEl.textContent = '◉ WAITING FOR HANDS';
+      statusEl.className = 'hud-line status';
+    } else {
+      statusEl.textContent = '◉ TRACKING';
+      statusEl.className = 'hud-line tracking';
+    }
+    countEl.textContent = 'HANDS: ' + count;
+  }
+
+  // ── Draw idle or hand visuals ──────────────────────────
+  if (smoothedHands.length > 0) {
+    withSymmetry(() => {
+      const mode = MODES[modeIdx];
+      if (mode === 'STRING')    drawString(smoothedHands, pal);
+      else if (mode === 'PARTICLES') drawParticlesMode(smoothedHands, pal);
+      else if (mode === 'WAVES')    drawWavesMode(smoothedHands, pal);
+    });
+  } else {
+    // Idle animation — floating sigil
+    drawIdleAnimation(pal);
+  }
+
+  // ── Draw camera PIP onto canvas (bottom-right corner) ──
+  // This ensures the cam feed is captured in recordings too.
+  drawCamPIP(pal);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CAMERA PIP — drawn onto canvas so it appears in recordings
+// ═══════════════════════════════════════════════════════════
+function drawCamPIP(pal) {
+  if (!video || !video.srcObject || video.readyState < 2) return;
+
+  const margin  = 16;
+  const pipW    = Math.max(120, Math.min(200, W * 0.18));
+  const pipH    = pipW * 0.75;
+  const labelH  = 18;
+  const totalH  = pipH + labelH;
+  const x = W - pipW - margin;
+  const y = H - totalH - margin;
+
+  ctx.save();
+
+  // Label bar (◉ LIVE CAM)
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(x, y, pipW, labelH);
+  ctx.font = '9px "Share Tech Mono"';
+  ctx.fillStyle = 'rgba(0,255,255,0.8)';
+  ctx.shadowColor = pal.a;
+  ctx.shadowBlur = 6;
+  ctx.textAlign = 'center';
+  ctx.fillText('◉  LIVE CAM', x + pipW / 2, y + 12);
+
+  // Video frame (mirrored)
+  ctx.save();
+  ctx.translate(x + pipW, y + labelH);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, pipW, pipH);
+  ctx.restore();
+
+  // Neon border
+  ctx.shadowColor = pal.a;
+  ctx.shadowBlur  = 14;
+  ctx.strokeStyle = 'rgba(0,255,255,0.6)';
+  ctx.lineWidth   = 1.5;
+  ctx.strokeRect(x, y, pipW, totalH);
+
+  // Corner bracket accents
+  const bSize = 8;
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = pal.a;
+  ctx.lineWidth = 2;
+  // TL
+  ctx.beginPath(); ctx.moveTo(x, y + bSize); ctx.lineTo(x, y); ctx.lineTo(x + bSize, y); ctx.stroke();
+  // TR
+  ctx.beginPath(); ctx.moveTo(x + pipW - bSize, y); ctx.lineTo(x + pipW, y); ctx.lineTo(x + pipW, y + bSize); ctx.stroke();
+  // BL
+  ctx.beginPath(); ctx.moveTo(x, y + totalH - bSize); ctx.lineTo(x, y + totalH); ctx.lineTo(x + bSize, y + totalH); ctx.stroke();
+  // BR
+  ctx.beginPath(); ctx.moveTo(x + pipW - bSize, y + totalH); ctx.lineTo(x + pipW, y + totalH); ctx.lineTo(x + pipW, y + totalH - bSize); ctx.stroke();
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IDLE ANIMATION (no hands detected)
+// ═══════════════════════════════════════════════════════════
+function drawIdleAnimation(pal) {
+  const cx = W / 2, cy = H / 2;
+  const r1 = Math.min(W, H) * 0.18;
+  const r2 = r1 * 0.55;
+  const pulse = 0.7 + 0.3 * Math.sin(t * 2.5);
+  const spin  = t * 0.4;
+  const NUM = 6;
+
+  for (let i = 0; i < NUM; i++) {
+    const a0 = spin + (i / NUM) * Math.PI * 2;
+    const a1 = spin + ((i + 1) / NUM) * Math.PI * 2;
+    const x0 = cx + Math.cos(a0) * r1, y0 = cy + Math.sin(a0) * r1;
+    const x1 = cx + Math.cos(a1) * r1, y1 = cy + Math.sin(a1) * r1;
+    const x2 = cx + Math.cos(a0 + Math.PI / NUM) * r2;
+    const y2 = cy + Math.sin(a0 + Math.PI / NUM) * r2;
+    neonLine(x0, y0, x1, y1, pal.a, 1.5 * pulse, 15, 0.6);
+    neonLine(x0, y0, x2, y2, pal.b, 1.2 * pulse, 12, 0.5);
+    neonLine(x1, y1, x2, y2, pal.b, 1.2 * pulse, 12, 0.5);
+    neonDot(x0, y0, 4 * pulse, pal.a, 18, 0.8);
+  }
+
+  // Center dot
+  neonDot(cx, cy, 8 * pulse, pal.c, 25, 0.9);
+
+  // "waiting" text pulse
+  ctx.save();
+  ctx.globalAlpha = 0.4 + 0.3 * Math.sin(t * 2);
+  ctx.font = '12px "Share Tech Mono"';
+  ctx.fillStyle = pal.a;
+  ctx.shadowColor = pal.a;
+  ctx.shadowBlur = 10;
+  ctx.textAlign = 'center';
+  ctx.fillText('SHOW YOUR HANDS', cx, cy + r1 + 40);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  KEYBOARD
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  switch(e.code) {
+    case 'Space':    e.preventDefault(); cyclePalette(); break;
+    case 'KeyM':     cycleMode();    break;
+    case 'KeyL':     toggleHarmonic(); break;
+    case 'KeyK':     toggleSymmetry(); break;
+    case 'KeyH':     toggleHelp(); break;
+    case 'KeyR':     toggleRecording(); break;
+    case 'Escape':
+      if (helpVisible) { helpVisible = false; document.getElementById('help-overlay').classList.remove('visible'); }
+      break;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  SCREEN RECORDING
+//  Records canvas (visuals + cam PIP) + microphone audio.
+//  On stop, auto-downloads a .webm file.
+// ═══════════════════════════════════════════════════════════
+let mediaRecorder    = null;
+let recordedChunks   = [];
+let recTimerInterval = null;
+let recStartTime     = 0;
+let isRecording      = false;
+let micStream        = null; // held so we can stop tracks on end
+
+function toggleRecording() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+async function startRecording() {
+  if (!canvas) return;
+
+  // ── 1. Request microphone ──────────────────────────────
+  let audioTracks = [];
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioTracks = micStream.getAudioTracks();
+  } catch (e) {
+    // Mic denied or unavailable — record without audio
+    console.warn('Mic unavailable, recording without audio:', e.message);
+    micStream = null;
+  }
+
+  // ── 2. Capture canvas at 60fps ────────────────────────
+  const canvasStream = canvas.captureStream(60);
+
+  // ── 3. Combine canvas video + mic audio into one stream ─
+  const combinedStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...audioTracks,
+  ]);
+
+  // ── 4. Pick best supported codec ──────────────────────
+  const mimeTypes = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4',
+  ];
+  const mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+  try {
+    mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
+  } catch (e) {
+    alert('Recording not supported in this browser. Try Chrome or Edge.');
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    return;
+  }
+
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = e => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    // Stop mic tracks
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+
+    const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const ts   = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.href     = url;
+    a.download = `neon-catscradle-${ts}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+    recordedChunks = [];
+  };
+
+  mediaRecorder.start(100);
+  isRecording  = true;
+  recStartTime = Date.now();
+
+  // ── Update UI ──────────────────────────────────────────
+  const recBtn      = document.getElementById('rec-btn');
+  const recStatus   = document.getElementById('rec-status');
+  const touchRecBtn = document.getElementById('touch-rec-btn');
+  const hasMic      = audioTracks.length > 0;
+
+  recBtn.textContent = '⏹ STOP';
+  recBtn.classList.add('recording');
+  if (touchRecBtn) { touchRecBtn.textContent = '⏹ STOP'; touchRecBtn.style.color = '#ff4444'; touchRecBtn.style.borderColor = '#ff4444'; }
+  recStatus.style.display = 'block';
+  recStatus.style.color   = '#ff4444';
+
+  recTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const ss = String(elapsed % 60).padStart(2, '0');
+    recStatus.textContent = (hasMic ? '● REC 🎙 ' : '● REC ') + `${mm}:${ss}`;
+  }, 1000);
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  mediaRecorder.stop();
+  isRecording = false;
+  clearInterval(recTimerInterval);
+
+  const recBtn      = document.getElementById('rec-btn');
+  const recStatus   = document.getElementById('rec-status');
+  const touchRecBtn = document.getElementById('touch-rec-btn');
+  recBtn.textContent = '⏺ REC';
+  recBtn.classList.remove('recording');
+  if (touchRecBtn) { touchRecBtn.textContent = '⏺ REC'; touchRecBtn.style.color = ''; touchRecBtn.style.borderColor = ''; }
+  recStatus.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MEDIAPIPE INIT
+//
+//  KEY MOBILE FIXES:
+//  1. We do NOT use MediaPipe's Camera utility — it calls
+//     getUserMedia() a second time internally, which mobile
+//     browsers deny silently (no prompt shown) because there
+//     is no fresh user gesture attached to that second call.
+//  2. We call getUserMedia() exactly once, directly inside
+//     the button-click handler (initCamera), which IS the
+//     user gesture. We then own the stream and drive the
+//     MediaPipe frame loop ourselves via requestAnimationFrame.
+//  3. We explicitly call video.play() and await it — required
+//     on iOS Safari for the video element to become readable.
+//  4. We wait for video.readyState >= 2 (HAVE_CURRENT_DATA)
+//     with a timeout fallback, because onloadedmetadata alone
+//     can silently stall on some Android browsers.
+// ═══════════════════════════════════════════════════════════
+
+// Drives MediaPipe frame sends from our own render loop.
+// We throttle to ~30fps for tracking (perf) while rendering at 60fps.
+let mpFramePending = false;
+let lastMpFrameTime = 0;
+const MP_FRAME_INTERVAL = 1000 / 30; // 30fps tracking is plenty
+
+async function sendFrameToMediaPipe() {
+  // Guard: don't pile up frames if MediaPipe is still processing
+  if (mpFramePending) return;
+  // Guard: video must be ready and playing
+  if (!video.srcObject || video.readyState < 2 || video.paused) return;
+
+  mpFramePending = true;
+  try {
+    await hands.send({ image: video });
+  } catch (e) {
+    // Swallow frame errors — they're transient (e.g. video not ready yet)
+  } finally {
+    mpFramePending = false;
+  }
+}
+
+// Waits for video.readyState >= 2 with a timeout.
+// onloadedmetadata alone stalls silently on some Android browsers.
+function waitForVideoReady(videoEl, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    if (videoEl.readyState >= 2) { resolve(); return; }
+
+    const timer = setTimeout(() => {
+      // Timeout — proceed anyway if we at least have metadata
+      if (videoEl.readyState >= 1) resolve();
+      else reject(new Error('Video stream timed out before becoming ready.'));
+    }, timeoutMs);
+
+    const onReady = () => { clearTimeout(timer); resolve(); };
+    videoEl.addEventListener('canplay',        onReady, { once: true });
+    videoEl.addEventListener('loadeddata',     onReady, { once: true });
+    videoEl.addEventListener('loadedmetadata', onReady, { once: true });
+  });
+}
+
+async function initCamera() {
+  const startScreen = document.getElementById('start-screen');
+  const errorMsg    = document.getElementById('error-msg');
+  const btn         = document.getElementById('start-btn');
+
+  btn.textContent = '◌ INITIALIZING...';
+  btn.disabled    = true;
+  errorMsg.style.display = 'none';
+
+  // ── Pre-check: has the user already blocked camera in this browser? ──
+  // The Permissions API (supported on Chrome/Android, not iOS Safari) lets
+  // us query the stored permission state BEFORE calling getUserMedia.
+  // If it's 'denied', the popup will NEVER appear — we tell the user how
+  // to reset it right away instead of silently failing.
+  if (navigator.permissions) {
+    try {
+      const perm = await navigator.permissions.query({ name: 'camera' });
+      if (perm.state === 'denied') {
+        btn.textContent = '▶ RETRY';
+        btn.disabled    = false;
+        errorMsg.style.display = 'block';
+        const ua = navigator.userAgent;
+        const isChrome = /Chrome/.test(ua) && !/Edg/.test(ua);
+        const isSamsung = /SamsungBrowser/.test(ua);
+        const steps = (isSamsung || isChrome)
+          ? 'TAP THE LOCK ICON IN THE ADDRESS BAR → PERMISSIONS → CAMERA → RESET'
+          : 'TAP THE INFO ICON IN THE ADDRESS BAR → CAMERA → ALLOW';
+        errorMsg.innerHTML =
+          '⚠ CAMERA WAS PREVIOUSLY BLOCKED — NO POPUP WILL APPEAR.<br><br>' +
+          steps + '<br><br>THEN TAP RETRY.';
+        return; // don't even call getUserMedia
+      }
+      // 'prompt' = popup will appear ✓   'granted' = already allowed ✓
+    } catch (_) {
+      // Permissions API not available or threw — proceed normally
+    }
+  }
+
+  try {
+    // ── Step 1: getUserMedia — exactly once, inside the user gesture ──
+    // Constraints: prefer front camera, lower resolution for mobile perf.
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode:  'user',
+        width:  { ideal: 640, max: 1280 },
+        height: { ideal: 480, max: 720  },
+      },
+    };
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (permErr) {
+      // Re-throw with a clear name so the catch block below can distinguish it
+      throw permErr;
+    }
+
+    // ── Step 2: Attach stream to the <video> element ──
+    // The element already has autoplay, muted, playsinline in HTML.
+    video.srcObject = stream;
+
+    // ── Step 3: Explicitly play + wait for readyState ──
+    // iOS Safari requires an explicit play() call even with autoplay attr.
+    try {
+      await video.play();
+    } catch (playErr) {
+      // Some browsers throw if play() is called before srcObject is ready;
+      // waitForVideoReady below will handle it.
+    }
+    await waitForVideoReady(video);
+
+    // ── Step 4: Init MediaPipe Hands (no Camera utility) ──
+    hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    });
+
+    hands.setOptions({
+      maxNumHands:            2,
+      modelComplexity:        1,   // 0 = faster on mobile, 1 = more accurate
+      minDetectionConfidence: 0.65,
+      minTrackingConfidence:  0.55,
+    });
+
+    hands.onResults(results => {
+      latestResults = results;
+    });
+
+    // Warm up MediaPipe with one frame so the WASM model loads now,
+    // not on the first real frame (avoids a visible freeze).
+    mpFramePending = true;
+    try { await hands.send({ image: video }); } catch (_) {}
+    mpFramePending = false;
+
+    // ── Step 5: Hide start screen, begin our own render + MP loop ──
+    startScreen.classList.add('hidden');
+    document.getElementById('rec-btn').style.display = 'block';
+
+    // From here, render() calls sendFrameToMediaPipe() on every frame.
+    // No Camera utility, no second getUserMedia — we own everything.
+    render(performance.now());
+
+  } catch (err) {
+    console.error('Camera init error:', err.name, err.message);
+    btn.textContent = '▶ RETRY';
+    btn.disabled    = false;
+    errorMsg.style.display = 'block';
+
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      // The most common cause on mobile: browser previously remembered "Block"
+      // from an earlier attempt, so it skips the popup and denies instantly.
+      // Detect which browser so we can give exact reset steps.
+      const ua  = navigator.userAgent;
+      const iOS = /iPhone|iPad|iPod/.test(ua);
+      const isChrome = /Chrome/.test(ua) && !/Edg/.test(ua);
+      const isSamsung = /SamsungBrowser/.test(ua);
+
+      let resetSteps;
+      if (iOS) {
+        resetSteps =
+          'YOUR BROWSER REMEMBERED A PREVIOUS "BLOCK".<br><br>' +
+          'TO RESET: TAP THE <b>aA</b> ICON IN SAFARI\'S ADDRESS BAR<br>' +
+          '→ WEBSITE SETTINGS → CAMERA → ALLOW<br>' +
+          'THEN TAP RETRY BELOW.';
+      } else if (isSamsung) {
+        resetSteps =
+          'YOUR BROWSER REMEMBERED A PREVIOUS "BLOCK".<br><br>' +
+          'TO RESET: TAP THE LOCK ICON IN THE ADDRESS BAR<br>' +
+          '→ PERMISSIONS → CAMERA → RESET<br>' +
+          'THEN TAP RETRY BELOW.';
+      } else if (isChrome) {
+        resetSteps =
+          'YOUR BROWSER REMEMBERED A PREVIOUS "BLOCK".<br><br>' +
+          'TO RESET: TAP THE LOCK ICON IN THE ADDRESS BAR<br>' +
+          '→ PERMISSIONS → CAMERA → RESET<br>' +
+          'THEN TAP RETRY BELOW.';
+      } else {
+        resetSteps =
+          'YOUR BROWSER REMEMBERED A PREVIOUS "BLOCK".<br><br>' +
+          'TO RESET: TAP THE LOCK OR INFO ICON IN THE ADDRESS BAR<br>' +
+          '→ FIND CAMERA PERMISSION → CHANGE TO "ASK" OR "ALLOW"<br>' +
+          'THEN TAP RETRY BELOW.';
+      }
+
+      errorMsg.innerHTML = '⚠ CAMERA BLOCKED — NO POPUP WILL APPEAR<br><br>' + resetSteps;
+
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      errorMsg.textContent = '⚠ NO CAMERA FOUND ON THIS DEVICE.';
+    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+      errorMsg.textContent = '⚠ CAMERA IN USE BY ANOTHER APP. CLOSE IT AND RETRY.';
+    } else if (err.name === 'OverconstrainedError') {
+      errorMsg.textContent = '⚠ CAMERA DOES NOT SUPPORT REQUIRED RESOLUTION. RETRYING...';
+      setTimeout(initCameraUnconstrained, 800);
+    } else if (!window.isSecureContext) {
+      errorMsg.innerHTML =
+        '⚠ CAMERA REQUIRES A SECURE CONNECTION.<br>' +
+        'OPEN THIS PAGE VIA <b>HTTPS://</b> — NOT HTTP://<br>' +
+        'OR USE LOCALHOST FOR LOCAL TESTING.';
+    } else {
+      errorMsg.textContent = '⚠ ERROR: ' + (err.message || err.name) + '. TRY RELOADING.';
+    }
+  }
+}
+
+// Fallback: retry with bare-minimum constraints if OverconstrainedError
+async function initCameraUnconstrained() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = stream;
+    try { await video.play(); } catch (_) {}
+    await waitForVideoReady(video);
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('rec-btn').style.display = 'block';
+    render(performance.now());
+  } catch (e) {
+    document.getElementById('error-msg').textContent = '⚠ COULD NOT ACCESS CAMERA: ' + e.message;
+  }
+}
+
+// ── On page load: check if we're on HTTPS / secure context ──
+// Camera permission popups ONLY appear on HTTPS (or localhost).
+// If the file is opened directly (file://) or over plain http://,
+// the browser silently blocks camera with no popup — ever.
+// We detect this immediately and explain it before the user taps anything.
+(function checkSecureContext() {
+  const btn      = document.getElementById('start-btn');
+  const errorMsg = document.getElementById('error-msg');
+
+  if (!window.isSecureContext) {
+    // Not on HTTPS or localhost — camera popup will never appear.
+    const isFileProtocol = location.protocol === 'file:';
+
+    btn.disabled  = true;
+    btn.textContent = '⚠ HTTPS REQUIRED';
+    btn.style.background   = '#333';
+    btn.style.color        = '#888';
+    btn.style.boxShadow    = 'none';
+    btn.style.cursor       = 'not-allowed';
+
+    errorMsg.style.display = 'block';
+
+    if (isFileProtocol) {
+      errorMsg.innerHTML =
+        '⚠ YOU\'VE OPENED THIS AS A LOCAL FILE.<br><br>' +
+        'BROWSERS BLOCK CAMERA ACCESS FOR LOCAL FILES — ' +
+        'THE PERMISSION POPUP WILL NEVER APPEAR THIS WAY.<br><br>' +
+        '<b>TO FIX:</b> HOST THIS FILE ON HTTPS.<br>' +
+        'EASIEST: DRAG &amp; DROP THIS FILE AT<br>' +
+        '<span style="color:#00ffff">netlify.com/drop</span><br>' +
+        'YOU\'LL GET A FREE HTTPS LINK IN SECONDS.<br><br>' +
+        'OR UPLOAD TO GITHUB PAGES FOR A PERMANENT URL.';
+    } else {
+      // http:// server
+      errorMsg.innerHTML =
+        '⚠ THIS PAGE IS ON HTTP, NOT HTTPS.<br><br>' +
+        'BROWSERS ONLY SHOW THE CAMERA POPUP ON SECURE (HTTPS) CONNECTIONS.<br><br>' +
+        '<b>TO FIX:</b> SERVE THIS FILE OVER HTTPS, OR USE<br>' +
+        '<span style="color:#00ffff">netlify.com/drop</span> FOR AN INSTANT HTTPS URL.';
+    }
+    return; // don't attach the click handler
+  }
+
+  // ✅ Secure context — attach the button normally
+  btn.addEventListener('click', initCamera);
+})();
+
+// Fallback: if MediaPipe doesn't load
+window.addEventListener('error', e => {
+  if (e.filename && e.filename.includes('mediapipe')) {
+    document.getElementById('error-msg').style.display = 'block';
+    document.getElementById('error-msg').textContent =
+      '⚠ MEDIAPIPE FAILED TO LOAD. CHECK YOUR INTERNET CONNECTION.';
+  }
+}, true);
+
+// Touch: close help on backdrop tap
+document.getElementById('help-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('help-overlay')) {
+    helpVisible = false;
+    document.getElementById('help-overlay').classList.remove('visible');
+  }
+});
+</script>
+</body>
+</html>
